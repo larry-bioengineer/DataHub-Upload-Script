@@ -3,6 +3,7 @@ import requests
 from pymodbus.client import ModbusTcpClient
 import dotenv
 import os
+import csv
 
 dotenv.load_dotenv()
 
@@ -28,39 +29,52 @@ register_address = 1499  # temperature
 # register_address = 1599  # humidity
 # register_address = 1699  # battery 
 
-result = client.read_holding_registers(
-    address=register_address,
-    count=5,
-    device_id=unit_id
-)
+def read_data(register_address):
+    result = client.read_holding_registers(
+        address=register_address,
+        count=5,
+        device_id=unit_id
+    )
 
-if not result.isError():
-    print(result)
-    raw_temp = result.registers[1]
-    if register_address == 1499:
-        temperature = raw_temp / 100.0
-        print(f"Current temperature: {temperature:.2f}°C")
-    elif register_address == 1599:
-        humidity = raw_temp / 10.0
-        print(f"Current humidity: {humidity:.2f}%")
-    elif register_address == 1699:
-        battery = raw_temp / 1000.0
-        print(f"Current battery: {battery:.2f}V")
-else:
-    print("Error reading register:", result)
+    if not result.isError():
+        print(result)
+        raw_temp = result.registers[1]
+        if register_address == 1499:
+            temperature = raw_temp / 100.0
+            print(f"Current temperature: {temperature:.2f}°C")
+            return temperature
+        elif register_address == 1599:
+            humidity = raw_temp / 10.0
+            print(f"Current humidity: {humidity:.2f}%")
+            return humidity
+        elif register_address == 1699:
+            battery = raw_temp / 1000.0
+            print(f"Current battery: {battery:.2f}V")
+            return battery
+    else:
+        print("Error reading register:", result)
 
 client.close()
 
 # send data to server
-headers = {
-    "Authorization": f"Bearer {os.getenv('CLOUD_BEARER_TOKEN')}"
-}
-resp = requests.post(
-    url=f"{SERVER_URL}",
-    json={
-        "Temp": temperature,
-    },
-    headers=headers
-)
 
-print(resp.json())
+
+with open('upload_endpoints.csv', 'r') as file:
+    reader = csv.DictReader(file)
+    for row in reader:
+        print(row)
+
+        resp = requests.post(
+            url=f"{row['endpoint']}",
+            json={
+                row['field']: read_data(int(row['register_address'])),
+            },
+            headers = {
+                "Authorization": f"Bearer {row['jwt']}"
+            }
+        )
+
+        if resp.status_code == 200:
+            print("Data sent successfully")
+        else:
+            print("Failed to send data")
